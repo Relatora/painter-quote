@@ -6,6 +6,8 @@ import type {
   QuoteWithItems,
   QuoteSummary,
   QuotePhoto,
+  QuoteRoom,
+  Surface,
   Category,
   UnitType,
   QuoteStatus,
@@ -65,6 +67,7 @@ function toPriceBookItem(r: any): PriceBookItem {
     unitType: r.unit_type as UnitType,
     unitPriceCents: r.unit_price_cents,
     isDefault: r.is_default === 1,
+    surface: (r.surface as Surface | null) ?? null,
     sortOrder: r.sort_order,
     archived: r.archived === 1,
     createdAt: r.created_at,
@@ -122,6 +125,20 @@ function toPhoto(r: any): QuotePhoto {
   }
 }
 
+function toRoom(r: any): QuoteRoom {
+  return {
+    id: r.id,
+    quoteId: r.quote_id,
+    name: r.name,
+    wallSqft: r.wall_sqft,
+    ceilingSqft: r.ceiling_sqft,
+    trimLinft: r.trim_linft,
+    coats: r.coats,
+    sortOrder: r.sort_order,
+    createdAt: r.created_at,
+  }
+}
+
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ---------------------------------------------------------------------------
@@ -159,8 +176,8 @@ export async function getOrCreateContractor(db: D1Database): Promise<Contractor>
         .prepare(
           `INSERT INTO price_book_item
              (id, contractor_id, name, description, category, unit_type,
-              unit_price_cents, is_default, sort_order, archived, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?)`,
+              unit_price_cents, is_default, surface, sort_order, archived, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?)`,
         )
         .bind(
           newId(),
@@ -170,6 +187,7 @@ export async function getOrCreateContractor(db: D1Database): Promise<Contractor>
           item.category,
           item.unitType,
           item.unitPriceCents,
+          item.surface ?? null,
           index,
           created,
         ),
@@ -360,7 +378,7 @@ export async function getQuote(db: D1Database, id: string): Promise<QuoteWithIte
     .first()
   if (!row) return null
 
-  const [items, photos] = await Promise.all([
+  const [items, photos, rooms] = await Promise.all([
     db
       .prepare('SELECT * FROM quote_line_item WHERE quote_id = ? ORDER BY sort_order')
       .bind(id)
@@ -369,12 +387,14 @@ export async function getQuote(db: D1Database, id: string): Promise<QuoteWithIte
       .prepare('SELECT * FROM quote_photo WHERE quote_id = ? ORDER BY sort_order')
       .bind(id)
       .all(),
+    db.prepare('SELECT * FROM quote_room WHERE quote_id = ? ORDER BY sort_order').bind(id).all(),
   ])
 
   return {
     ...toQuote(row),
     lineItems: items.results.map(toLineItem),
     photos: photos.results.map(toPhoto),
+    rooms: rooms.results.map(toRoom),
   }
 }
 
@@ -409,6 +429,8 @@ export async function getQuoteByToken(
       ...quote,
       lineItems: items.results.map(toLineItem),
       photos: photos.results.map(toPhoto),
+      // Rooms are the painter's working measurements, not part of what a customer sees.
+      rooms: [],
     },
     contractor: toContractor(contractorRow),
   }
@@ -590,4 +612,62 @@ export async function getPhotoRow(
 
 export async function deletePhoto(db: D1Database, id: string): Promise<void> {
   await db.prepare('DELETE FROM quote_photo WHERE id = ?').bind(id).run()
+}
+
+// ---------------------------------------------------------------------------
+// Rooms
+// ---------------------------------------------------------------------------
+
+export interface RoomInput {
+  name: string
+  wallSqft: number
+  ceilingSqft: number
+  trimLinft: number
+  coats: number
+}
+
+/**
+ * Replaces a quote's rooms wholesale, matching how line items are saved. The sheet holds
+ * the whole list locally and commits it as one unit, so there is no window in which a
+ * quote carries half the measurements.
+ */
+export async function replaceRooms(
+  db: D1Database,
+  quoteId: string,
+  rooms: RoomInput[],
+): Promise<QuoteRoom[]> {
+  const created = nowIso()
+  const statements: D1PreparedStatement[] = [
+    db.prepare('DELETE FROM quote_room WHERE quote_id = ?').bind(quoteId),
+  ]
+
+  rooms.forEach((room, index) => {
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO quote_room
+             (id, quote_id, name, wall_sqft, ceiling_sqft, trim_linft, coats, sort_order, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          newId(),
+          quoteId,
+          room.name,
+          room.wallSqft,
+          room.ceilingSqft,
+          room.trimLinft,
+          room.coats,
+          index,
+          created,
+        ),
+    )
+  })
+
+  await db.batch(statements)
+
+  const { results } = await db
+    .prepare('SELECT * FROM quote_room WHERE quote_id = ? ORDER BY sort_order')
+    .bind(quoteId)
+    .all()
+  return results.map(toRoom)
 }

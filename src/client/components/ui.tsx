@@ -59,6 +59,12 @@ export const CameraIcon = icon(
     <circle cx="12" cy="12.5" r="3.5" />
   </>,
 )
+export const RulerIcon = icon(
+  <>
+    <path d="M2.5 13.5L13.5 2.5a1.4 1.4 0 012 0l6 6a1.4 1.4 0 010 2l-11 11a1.4 1.4 0 01-2 0l-6-6a1.4 1.4 0 010-2z" />
+    <path d="M7 9l2 2M10 6l2 2M13 15l2 2M16 12l2 2" />
+  </>,
+)
 export const BrushIcon = icon(
   <>
     <path d="M4 20s1-3 4-3 3 2 5 2 4-2 4-2" />

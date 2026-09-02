@@ -1,4 +1,4 @@
-import type { Category, UnitType } from '../../shared/types'
+import type { Category, UnitType, Surface } from '../../shared/types'
 
 export interface SeedItem {
   name: string
@@ -6,6 +6,29 @@ export interface SeedItem {
   category: Category
   unitType: UnitType
   unitPriceCents: number
+  /** Set from SURFACE_BY_NAME below, so the mapping lives in exactly one place. */
+  surface?: Surface | null
+}
+
+/**
+ * Which surface each seeded item coats, so room measurements can fan out onto line items
+ * without matching on names at runtime. Anything absent is not driven by measurements:
+ * doors and windows are counted, gallons are derived, and fees are flat.
+ *
+ * Kept in sync with the backfill in migrations/0003_rooms.sql.
+ */
+export const SURFACE_BY_NAME: Record<string, Surface> = {
+  'Interior walls': 'wall',
+  'Exterior siding': 'wall',
+  Priming: 'wall',
+  'Wallpaper removal': 'wall',
+  'Pressure washing': 'wall',
+  Ceilings: 'ceiling',
+  'Popcorn ceiling removal': 'ceiling',
+  'Trim and baseboard': 'trim',
+  'Crown molding': 'trim',
+  Caulking: 'trim',
+  'Exterior soffit and fascia': 'trim',
 }
 
 /**
@@ -20,7 +43,7 @@ export interface SeedItem {
  * Rates are plausible US mid-market figures, NOT researched market data. They exist to be
  * corrected. Do not present them anywhere as recommended or benchmark pricing.
  */
-export const SEED_PRICE_BOOK: SeedItem[] = [
+const SEED_ITEMS: SeedItem[] = [
   // ---- Labor: the painting itself. Wall and ceiling rates are PER COAT. ----
   {
     name: 'Interior walls',
@@ -177,28 +200,7 @@ export const SEED_PRICE_BOOK: SeedItem[] = [
   },
 ]
 
-/** Paint coverage in square feet per gallon, per coat. Used to suggest gallon counts. */
-export const COVERAGE_SQFT_PER_GALLON = {
-  interior: 350,
-  exterior: 300,
-  primer: 300,
-} as const
-
-/** Common room presets so dimension entry is two taps, not a measuring tape. */
-export interface RoomPreset {
-  name: string
-  /** Paintable wall area in sq ft at an 8 ft ceiling, less a typical door and window. */
-  wallSqft: number
-  ceilingSqft: number
-  trimLinft: number
-}
-
-export const ROOM_PRESETS: RoomPreset[] = [
-  { name: 'Bathroom (5x8)', wallSqft: 190, ceilingSqft: 40, trimLinft: 26 },
-  { name: 'Bedroom (10x12)', wallSqft: 330, ceilingSqft: 120, trimLinft: 44 },
-  { name: 'Bedroom (12x12)', wallSqft: 360, ceilingSqft: 144, trimLinft: 48 },
-  { name: 'Living room (14x18)', wallSqft: 480, ceilingSqft: 252, trimLinft: 64 },
-  { name: 'Kitchen (10x14)', wallSqft: 350, ceilingSqft: 140, trimLinft: 48 },
-  { name: 'Hallway (4x20)', wallSqft: 370, ceilingSqft: 80, trimLinft: 48 },
-  { name: 'Stairwell', wallSqft: 300, ceilingSqft: 0, trimLinft: 40 },
-]
+export const SEED_PRICE_BOOK: SeedItem[] = SEED_ITEMS.map((item) => ({
+  ...item,
+  surface: SURFACE_BY_NAME[item.name] ?? null,
+}))

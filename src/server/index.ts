@@ -18,6 +18,8 @@ import {
   createPhoto,
   getPhotoRow,
   deletePhoto,
+  replaceRooms,
+  type RoomInput,
   type ContractorPatch,
   type QuotePatch,
   type LineItemInput,
@@ -118,6 +120,30 @@ app.put('/api/quotes/:id/items', async (c) => {
   return quote ? c.json(quote) : c.json({ error: 'Not found' }, 404)
 })
 
+
+// ---------------------------------------------------------------------------
+// Rooms
+// ---------------------------------------------------------------------------
+
+app.put('/api/quotes/:id/rooms', async (c) => {
+  const body = (await c.req.json()) as { rooms: RoomInput[] }
+  if (!Array.isArray(body.rooms)) return c.json({ error: 'rooms must be an array' }, 400)
+
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+
+  const clean = body.rooms.slice(0, 60).map((room) => ({
+    name: String(room.name ?? '').slice(0, 120) || 'Room',
+    wallSqft: num(room.wallSqft),
+    ceilingSqft: num(room.ceilingSqft),
+    trimLinft: num(room.trimLinft),
+    // At least one coat, capped so a typo cannot multiply a quote out of all recognition.
+    coats: Math.min(5, Math.max(1, Math.round(num(room.coats)) || 1)),
+  }))
+
+  await replaceRooms(c.env.DB, c.req.param('id'), clean)
+  const quote = await getQuote(c.env.DB, c.req.param('id'))
+  return quote ? c.json(quote) : c.json({ error: 'Not found' }, 404)
+})
 
 // ---------------------------------------------------------------------------
 // Photos

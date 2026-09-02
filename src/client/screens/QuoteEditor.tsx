@@ -7,12 +7,20 @@ import type {
   QuotePhoto,
   ScopeAnalysis,
   ScopeItem,
+  QuoteRoom,
   Category,
 } from '../../shared/types'
 import { CATEGORY_LABEL, CATEGORY_ORDER, UNIT_LABEL } from '../../shared/types'
 import { calculateTotals, lineTotalCents, formatCents, parsePriceToCents } from '../../shared/pricing'
 import { api, photoUrl, ApiError } from '../lib/api'
 import { prepareImage } from '../lib/image'
+import {
+  totalsForRooms,
+  quantityForSurface,
+  gallonsFor,
+} from '../../shared/rooms'
+import { COVERAGE_SQFT_PER_GALLON } from '../../shared/room-presets'
+import { MeasurementSummary, RoomsSheet } from '../components/rooms'
 import {
   Button,
   IconButton,
@@ -58,6 +66,8 @@ export default function QuoteEditor() {
   const [uploading, setUploading] = useState(0)
   const [analysis, setAnalysis] = useState<ScopeAnalysis | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [rooms, setRooms] = useState<QuoteRoom[]>([])
+  const [roomsOpen, setRoomsOpen] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -66,6 +76,7 @@ export default function QuoteEditor() {
       setQuote(q)
       setItems(q.lineItems.map(toDraft))
       setPhotos(q.photos)
+      setRooms(q.rooms)
       setPriceBook(pb)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not open this quote.')
@@ -198,6 +209,46 @@ export default function QuoteEditor() {
         setUploading((n) => n - 1)
       }
     }
+  }
+
+  async function saveRooms(next: QuoteRoom[]) {
+    setRooms(next)
+    try {
+      await api.saveRooms(id, next)
+    } catch {
+      setError('Could not save the measurements.')
+    }
+  }
+
+  /**
+   * Fans room measurements out across the quote.
+   *
+   * Only items whose price book entry declares a surface are touched, so counted items
+   * like doors and flat fees keep whatever the painter set. Gallons are derived from the
+   * coated area, which already has coats baked in, since coverage is quoted per coat.
+   *
+   * This overwrites quantities on surface-linked lines, which is why it is an explicit
+   * action rather than something that happens silently whenever a room changes.
+   */
+  function applyMeasurements(next: QuoteRoom[]) {
+    const totals = totalsForRooms(next)
+    const coatedSqft = totals.wallSqft + totals.ceilingSqft
+
+    updateItems(
+      items.map((item) => {
+        const entry = priceBook.find((p) => p.id === item.priceBookItemId)
+        if (!entry) return item
+
+        const bySurface = quantityForSurface(entry.surface, totals)
+        if (bySurface !== null) return { ...item, quantity: bySurface }
+
+        if (entry.unitType === 'gallon') {
+          return { ...item, quantity: gallonsFor(coatedSqft, COVERAGE_SQFT_PER_GALLON.interior) }
+        }
+        return item
+      }),
+    )
+    setRoomsOpen(false)
   }
 
   async function analyze() {
@@ -362,6 +413,8 @@ export default function QuoteEditor() {
         onRemove={removePhoto}
       />
 
+      <MeasurementSummary rooms={rooms} onOpen={() => setRoomsOpen(true)} />
+
       <div className="px-4 pb-5">
         <Button
           variant="secondary"
@@ -441,6 +494,14 @@ export default function QuoteEditor() {
           Preview and send
         </Button>
       </footer>
+
+      <RoomsSheet
+        open={roomsOpen}
+        rooms={rooms}
+        onClose={() => setRoomsOpen(false)}
+        onChange={saveRooms}
+        onApply={applyMeasurements}
+      />
 
       <ScopeSheet
         analysis={analysis}

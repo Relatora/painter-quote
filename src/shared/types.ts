@@ -52,6 +52,7 @@ export interface PriceBookItem {
   unitType: UnitType
   unitPriceCents: number
   isDefault: boolean
+  surface: Surface | null
   sortOrder: number
   archived: boolean
   createdAt: string
@@ -91,6 +92,21 @@ export interface Quote {
   expiresAt: string | null
 }
 
+/** Which surface a price book item coats. Null means room measurements do not drive it. */
+export type Surface = 'wall' | 'ceiling' | 'trim'
+
+export interface QuoteRoom {
+  id: string
+  quoteId: string
+  name: string
+  wallSqft: number
+  ceilingSqft: number
+  trimLinft: number
+  coats: number
+  sortOrder: number
+  createdAt: string
+}
+
 export interface QuotePhoto {
   id: string
   quoteId: string
@@ -105,6 +121,7 @@ export interface QuotePhoto {
 export interface QuoteWithItems extends Quote {
   lineItems: QuoteLineItem[]
   photos: QuotePhoto[]
+  rooms: QuoteRoom[]
 }
 
 /** Longest edge, in pixels, that a photo is resized to before upload. */

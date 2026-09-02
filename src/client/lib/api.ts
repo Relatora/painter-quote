@@ -108,4 +108,7 @@ export const api = {
 
   analyzeQuote: (id: string) =>
     request<ScopeAnalysis>(`/api/quotes/${id}/analyze`, { method: 'POST' }),
+
+  saveRooms: (id: string, rooms: unknown[]) =>
+    request<QuoteWithItems>(`/api/quotes/${id}/rooms`, json('PUT', { rooms })),
 }
