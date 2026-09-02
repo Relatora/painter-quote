@@ -75,8 +75,11 @@ implementations of money math would eventually give two answers.
 Photo to quote works end to end: capture job photos, let the AI find the work, confirm what
 applies, set quantities and prices, share a link, and the customer opens a real document.
 
-Authentication is deliberately absent so a painter can be handed a phone during validation
-with nothing in the way. `DEMO_MODE=1` is the default, so the AI step returns a realistic
-sample rather than calling a model, and a demo never depends on a live API call.
+Sign-in is by magic link, with no password to choose or forget. While `DEMO_MODE=1` an
+unauthenticated visitor falls back to a shared demo account, so a painter can still be
+handed a phone during validation with nothing in the way.
+
+`DEMO_MODE=1` is also the default for the AI step, which returns a realistic sample rather
+than calling a model, so a demo never depends on a live API call.
 
 See the [open issues](https://github.com/Relatora/painter-quote/issues) for what is next.

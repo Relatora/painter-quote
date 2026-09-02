@@ -17,9 +17,9 @@ import { calculateTotals } from '../../shared/pricing'
 import { SEED_PRICE_BOOK } from '../fixtures/seed-price-book'
 
 /**
- * Until magic-link auth lands, every request belongs to one local contractor. Keeping the
- * id in one place means adding real auth is a matter of resolving this from a session
- * rather than threading a new parameter through every call site.
+ * The contractor used when DEMO_MODE is on and nobody is signed in. It keeps the
+ * hand-a-painter-a-phone demo path working with no account, while every deployed
+ * request resolves a real contractor from its session instead.
  */
 export const DEMO_CONTRACTOR_ID = 'demo-contractor'
 
@@ -149,14 +149,34 @@ function toRoom(r: any): QuoteRoom {
  * Returns the local contractor, creating it and seeding the price book on first call.
  * Idempotent, so it is safe to call at the top of every request.
  */
-export async function getOrCreateContractor(db: D1Database): Promise<Contractor> {
-  const existing = await db
-    .prepare('SELECT * FROM contractor WHERE id = ?')
-    .bind(DEMO_CONTRACTOR_ID)
-    .first()
+export async function findContractorById(
+  db: D1Database,
+  id: string,
+): Promise<Contractor | null> {
+  const row = await db.prepare('SELECT * FROM contractor WHERE id = ?').bind(id).first()
+  return row ? toContractor(row) : null
+}
 
-  if (existing) return toContractor(existing)
+export async function findContractorByEmail(
+  db: D1Database,
+  email: string,
+): Promise<Contractor | null> {
+  const row = await db.prepare('SELECT * FROM contractor WHERE email = ?').bind(email).first()
+  return row ? toContractor(row) : null
+}
 
+/**
+ * Creates a contractor and seeds their price book in one batch.
+ *
+ * The seeding is the point: a painter who has just signed in for the first time can build
+ * a complete quote immediately, because every rate is already there waiting to be
+ * corrected rather than entered from scratch.
+ */
+export async function createContractor(
+  db: D1Database,
+  id: string,
+  email: string | null,
+): Promise<Contractor> {
   const created = nowIso()
   const statements: D1PreparedStatement[] = [
     db
@@ -165,9 +185,9 @@ export async function getOrCreateContractor(db: D1Database): Promise<Contractor>
            (id, company_name, owner_name, email, phone, address, logo_key,
             tax_rate_bps, job_minimum_cents, quote_terms, quote_validity_days,
             next_quote_number, created_at)
-         VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, 0, 0, ?, 30, 1, ?)`,
+         VALUES (?, ?, NULL, ?, NULL, NULL, NULL, 0, 0, ?, 30, 1, ?)`,
       )
-      .bind(DEMO_CONTRACTOR_ID, 'Your Company', DEFAULT_TERMS, created),
+      .bind(id, 'Your Company', email, DEFAULT_TERMS, created),
   ]
 
   SEED_PRICE_BOOK.forEach((item, index) => {
@@ -181,7 +201,7 @@ export async function getOrCreateContractor(db: D1Database): Promise<Contractor>
         )
         .bind(
           newId(),
-          DEMO_CONTRACTOR_ID,
+          id,
           item.name,
           item.description,
           item.category,
@@ -196,11 +216,14 @@ export async function getOrCreateContractor(db: D1Database): Promise<Contractor>
 
   await db.batch(statements)
 
-  const row = await db
-    .prepare('SELECT * FROM contractor WHERE id = ?')
-    .bind(DEMO_CONTRACTOR_ID)
-    .first()
+  const row = await db.prepare('SELECT * FROM contractor WHERE id = ?').bind(id).first()
   return toContractor(row)
+}
+
+/** Ensures the demo contractor exists. Only reachable while DEMO_MODE is on. */
+export async function ensureDemoContractor(db: D1Database): Promise<Contractor> {
+  const existing = await findContractorById(db, DEMO_CONTRACTOR_ID)
+  return existing ?? createContractor(db, DEMO_CONTRACTOR_ID, null)
 }
 
 export type ContractorPatch = Partial<
@@ -232,6 +255,7 @@ const CONTRACTOR_COLUMNS: Record<keyof ContractorPatch, string> = {
 
 export async function updateContractor(
   db: D1Database,
+  contractorId: string,
   patch: ContractorPatch,
 ): Promise<Contractor> {
   const entries = Object.entries(patch).filter(([key]) => key in CONTRACTOR_COLUMNS)
@@ -241,24 +265,29 @@ export async function updateContractor(
       .join(', ')
     await db
       .prepare(`UPDATE contractor SET ${setSql} WHERE id = ?`)
-      .bind(...entries.map(([, value]) => value), DEMO_CONTRACTOR_ID)
+      .bind(...entries.map(([, value]) => value), contractorId)
       .run()
   }
-  return getOrCreateContractor(db)
+  const updated = await findContractorById(db, contractorId)
+  if (!updated) throw new Error('Contractor vanished during update')
+  return updated
 }
 
 // ---------------------------------------------------------------------------
 // Price book
 // ---------------------------------------------------------------------------
 
-export async function listPriceBook(db: D1Database): Promise<PriceBookItem[]> {
+export async function listPriceBook(
+  db: D1Database,
+  contractorId: string,
+): Promise<PriceBookItem[]> {
   const { results } = await db
     .prepare(
       `SELECT * FROM price_book_item
         WHERE contractor_id = ? AND archived = 0
         ORDER BY sort_order, name`,
     )
-    .bind(DEMO_CONTRACTOR_ID)
+    .bind(contractorId)
     .all()
   return results.map(toPriceBookItem)
 }
@@ -269,6 +298,7 @@ export async function listPriceBook(db: D1Database): Promise<PriceBookItem[]> {
  */
 export async function confirmPriceBookPrice(
   db: D1Database,
+  contractorId: string,
   id: string,
   unitPriceCents: number,
 ): Promise<void> {
@@ -278,7 +308,7 @@ export async function confirmPriceBookPrice(
           SET unit_price_cents = ?, is_default = 0
         WHERE id = ? AND contractor_id = ?`,
     )
-    .bind(unitPriceCents, id, DEMO_CONTRACTOR_ID)
+    .bind(unitPriceCents, id, contractorId)
     .run()
 }
 
@@ -293,10 +323,13 @@ export async function confirmPriceBookPrice(
  * summed in SQL. Reproducing the job-minimum and tax rules in a query would create a
  * second, silently divergent definition of what a quote costs.
  */
-export async function listQuotes(db: D1Database): Promise<QuoteSummary[]> {
+export async function listQuotes(
+  db: D1Database,
+  contractorId: string,
+): Promise<QuoteSummary[]> {
   const { results } = await db
     .prepare('SELECT * FROM quote WHERE contractor_id = ? ORDER BY created_at DESC LIMIT 100')
-    .bind(DEMO_CONTRACTOR_ID)
+    .bind(contractorId)
     .all()
 
   const quotes = results.map(toQuote)
@@ -327,8 +360,13 @@ export async function listQuotes(db: D1Database): Promise<QuoteSummary[]> {
   })
 }
 
-export async function createQuote(db: D1Database, title: string): Promise<QuoteWithItems> {
-  const contractor = await getOrCreateContractor(db)
+export async function createQuote(
+  db: D1Database,
+  contractorId: string,
+  title: string,
+): Promise<QuoteWithItems> {
+  const contractor = await findContractorById(db, contractorId)
+  if (!contractor) throw new Error('Unknown contractor')
   const id = newId()
   const created = nowIso()
   const quoteNumber = `Q-${String(contractor.nextQuoteNumber).padStart(4, '0')}`
@@ -348,7 +386,7 @@ export async function createQuote(db: D1Database, title: string): Promise<QuoteW
       )
       .bind(
         id,
-        DEMO_CONTRACTOR_ID,
+        contractorId,
         quoteNumber,
         title,
         // Terms and rates are snapshotted so a sent quote never changes retroactively
@@ -363,18 +401,22 @@ export async function createQuote(db: D1Database, title: string): Promise<QuoteW
       ),
     db
       .prepare('UPDATE contractor SET next_quote_number = next_quote_number + 1 WHERE id = ?')
-      .bind(DEMO_CONTRACTOR_ID),
+      .bind(contractorId),
   ])
 
-  const quote = await getQuote(db, id)
+  const quote = await getQuote(db, contractorId, id)
   if (!quote) throw new Error('Quote vanished immediately after insert')
   return quote
 }
 
-export async function getQuote(db: D1Database, id: string): Promise<QuoteWithItems | null> {
+export async function getQuote(
+  db: D1Database,
+  contractorId: string,
+  id: string,
+): Promise<QuoteWithItems | null> {
   const row = await db
     .prepare('SELECT * FROM quote WHERE id = ? AND contractor_id = ?')
-    .bind(id, DEMO_CONTRACTOR_ID)
+    .bind(id, contractorId)
     .first()
   if (!row) return null
 
@@ -467,6 +509,7 @@ const QUOTE_COLUMNS: Record<keyof QuotePatch, string> = {
 
 export async function updateQuote(
   db: D1Database,
+  contractorId: string,
   id: string,
   patch: QuotePatch,
 ): Promise<QuoteWithItems | null> {
@@ -478,16 +521,20 @@ export async function updateQuote(
 
   await db
     .prepare(`UPDATE quote SET ${setSql} WHERE id = ? AND contractor_id = ?`)
-    .bind(...entries.map(([, value]) => value), nowIso(), id, DEMO_CONTRACTOR_ID)
+    .bind(...entries.map(([, value]) => value), nowIso(), id, contractorId)
     .run()
 
-  return getQuote(db, id)
+  return getQuote(db, contractorId, id)
 }
 
-export async function deleteQuote(db: D1Database, id: string): Promise<void> {
+export async function deleteQuote(
+  db: D1Database,
+  contractorId: string,
+  id: string,
+): Promise<void> {
   await db.batch([
     db.prepare('DELETE FROM quote_line_item WHERE quote_id = ?').bind(id),
-    db.prepare('DELETE FROM quote WHERE id = ? AND contractor_id = ?').bind(id, DEMO_CONTRACTOR_ID),
+    db.prepare('DELETE FROM quote WHERE id = ? AND contractor_id = ?').bind(id, contractorId),
   ])
 }
 
@@ -511,6 +558,7 @@ export interface LineItemInput {
  */
 export async function replaceLineItems(
   db: D1Database,
+  contractorId: string,
   quoteId: string,
   items: LineItemInput[],
 ): Promise<QuoteWithItems | null> {
@@ -548,7 +596,7 @@ export async function replaceLineItems(
   )
 
   await db.batch(statements)
-  return getQuote(db, quoteId)
+  return getQuote(db, contractorId, quoteId)
 }
 
 // ---------------------------------------------------------------------------

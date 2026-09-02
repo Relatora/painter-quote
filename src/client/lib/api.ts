@@ -111,4 +111,18 @@ export const api = {
 
   saveRooms: (id: string, rooms: unknown[]) =>
     request<QuoteWithItems>(`/api/quotes/${id}/rooms`, json('PUT', { rooms })),
+
+  me: () => request<AuthState>('/api/auth/me'),
+
+  requestSignIn: (email: string) =>
+    request<{ sent: true; devLink?: string }>('/api/auth/request', json('POST', { email })),
+
+  logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+}
+
+export interface AuthState {
+  signedIn: boolean
+  /** True when running on the shared demo account rather than a real sign-in. */
+  demo?: boolean
+  contractor?: Contractor
 }

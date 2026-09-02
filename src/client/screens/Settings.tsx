@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import type { Contractor } from '../../shared/types'
 import { parsePriceToCents, formatCents } from '../../shared/pricing'
-import { api, ApiError } from '../lib/api'
+import { api, ApiError, type AuthState } from '../lib/api'
 import { Button, IconButton, Field, BackIcon, ErrorNote, LoadingBlock } from '../components/ui'
 
 export default function Settings() {
@@ -10,6 +10,7 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [auth, setAuth] = useState<AuthState | null>(null)
 
   // Held as text so a half typed value like "8." does not get coerced mid keystroke.
   const [taxText, setTaxText] = useState('')
@@ -18,8 +19,9 @@ export default function Settings() {
   const load = useCallback(async () => {
     setError(null)
     try {
-      const c = await api.getContractor()
+      const [c, me] = await Promise.all([api.getContractor(), api.me()])
       setContractor(c)
+      setAuth(me)
       setTaxText((c.taxRateBps / 100).toString())
       setMinimumText((c.jobMinimumCents / 100).toFixed(2))
     } catch (e) {
@@ -156,6 +158,39 @@ export default function Settings() {
               multiline
               hint="Keep the estimate language. It protects you if site conditions differ from the photos."
             />
+          </section>
+
+          <section className="border-t border-canvas-soft px-4 py-5">
+            <h2 className="mb-3 text-xl font-bold">Account</h2>
+            {auth?.demo ? (
+              <>
+                <p className="mb-4 text-base text-body">
+                  You are on the shared demo account. Sign in with your email to keep your
+                  own quotes and price book.
+                </p>
+                <Link to="/signin">
+                  <Button variant="secondary" className="w-full">
+                    Sign in
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="mb-4 text-base text-body">
+                  Signed in as {contractor.email ?? 'your account'}.
+                </p>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={async () => {
+                    await api.logout().catch(() => undefined)
+                    window.location.href = '/signin'
+                  }}
+                >
+                  Sign out
+                </Button>
+              </>
+            )}
           </section>
 
           <div className="pb-safe sticky bottom-0 mt-auto border-t border-canvas-soft bg-canvas px-4 pt-3">

@@ -48,6 +48,34 @@ Two unrelated things are both called "tier":
 `DEMO_MODE=1` stubs the vision call entirely: the whole UI builds and demos with no API
 key, no quota burn, and no network.
 
+## Authentication
+
+Magic link. The contractor row is the user, and their email is the login identity.
+
+Sessions are stateless signed cookies rather than a session table: no storage, no lookup
+per request, no cleanup job. The tradeoff is that a session cannot be revoked server side
+before it expires, which is why the lifetime is bounded at 30 days.
+
+**A deployment MUST set SESSION_SECRET as a Wrangler secret.** The code falls back to a
+known development string, and with a known signing key anyone could forge a session for
+any contractor.
+
+```bash
+npx wrangler secret put SESSION_SECRET
+```
+
+Login tokens are stored only as a SHA-256 hash, are single use, and expire in 15 minutes.
+Every failure at the callback produces the same redirect, so an attacker learns nothing
+about which guesses were close.
+
+While `DEMO_MODE=1`, an unauthenticated request falls back to a shared demo contractor so
+the validation demo needs no account. **With DEMO_MODE off there is no fallback.** The
+`devLink` in the sign-in response is gated on the same flag, because returning a working
+login link to an unauthenticated caller in production would hand out accounts.
+
+Email goes through Resend when RESEND_API_KEY is set, and otherwise through a stub that
+logs the link. Set MAIL_FROM once a sending domain is verified.
+
 ## Testing
 
 - `src/shared/pricing.ts` is pure functions and must be exhaustively unit tested. Cover job
