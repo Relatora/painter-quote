@@ -1,111 +1,119 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+  Tokens from DESIGN.md (Uber-derived), with the overrides recorded in DESIGN.local.md.
+  The use scene is a painter outdoors in direct sunlight, so the system is light-only and
+  maximum contrast. There is deliberately no dark mode: a dark UI in glare is unreadable.
+*/
+@theme {
+  --color-ink: #000000;
+  --color-body: #5e5e5e;
+  --color-hairline-mid: #4b4b4b;
+  --color-mute: #afafaf;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #efefef;
+  --color-canvas-softer: #f3f3f3;
+  --color-surface-pressed: #e2e2e2;
+  --color-black-elevated: #282828;
+  --color-on-dark: #ffffff;
+  --color-link: #0000ee;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Extension: the base system has no semantic palette. Reserved strictly for
+     destructive actions and genuine errors — never for the unconfirmed-price state,
+     which is an invitation to act, not a failure. 6.4:1 on canvas. */
+  --color-alert: #c8102e;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  /*
+    System stack, chosen deliberately. DESIGN.md specifies UberMove, which is proprietary;
+    substituting the nearest installed lookalike would be a costume. A field tool loading a
+    webfont over a truck's cell connection is a worse failure than honest system type.
+  */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    /* Stops iOS Safari zooming the viewport when a sub-16px input is focused. */
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Prevents the rubber-band scroll revealing the browser chrome behind a fixed footer. */
+    overscroll-behavior-y: none;
+  }
+
+  /*
+    Browser surfaces we did not draw still carry the design. Left at defaults these are
+    the clearest tell that a page was assembled rather than built.
+  */
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-on-dark);
+  }
+
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+    caret-color: var(--color-ink);
+    accent-color: var(--color-ink);
+    scrollbar-color: var(--color-mute) transparent;
+    scrollbar-width: thin;
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  :focus-visible {
+    outline: 3px solid var(--color-ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Money must align vertically in a column someone is asked to pay against. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  /*
+    Native number inputs add spinners that steal tap area and let a stray scroll change a
+    price. Quantity and price fields use inputMode="decimal" on a text input instead, but
+    this guards any that slip through.
+  */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+@layer utilities {
+  /* Real values only when index.html sets viewport-fit=cover. */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+@media print {
+  .no-print {
+    display: none !important;
   }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+  body {
+    background: #fff;
+  }
+  /* A quote printed to PDF should not break a line item across pages. */
+  .print-avoid-break {
+    break-inside: avoid;
+  }
 }

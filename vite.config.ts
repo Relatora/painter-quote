@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     // Runs the Hono Worker inside the Vite dev server, so `npm run dev` serves the
-    // client and the API from one origin with the real Workers runtime (workerd) —
+    // client and the API from one origin with the real Workers runtime (workerd) -
     // no separate `wrangler dev` process, and bindings behave as they do in production.
     cloudflare(),
     VitePWA({
@@ -36,7 +36,8 @@ export default defineConfig({
       },
     }),
   ],
-  build: {
-    outDir: 'dist/client',
-  },
+  // No build.outDir override here. The Cloudflare plugin owns the output layout and
+  // emits client assets to dist/client and the worker to dist/<worker-name>, which is
+  // exactly what wrangler.jsonc's assets.directory points at. Setting outDir ourselves
+  // nests both one level deeper and silently breaks asset serving in production.
 })

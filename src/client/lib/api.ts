@@ -1,0 +1,73 @@
+import type {
+  Contractor,
+  PriceBookItem,
+  Quote,
+  QuoteSummary,
+  QuoteWithItems,
+  PublicQuote,
+} from '../../shared/types'
+
+export class ApiError extends Error {
+  // Declared explicitly rather than as a constructor parameter property, which
+  // erasableSyntaxOnly disallows: it would need emitted code to assign the field.
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init?.headers },
+    })
+  } catch {
+    // A painter in a basement or a dead zone gets this. Say what happened and what to do.
+    throw new ApiError('No connection. Your work is saved on this device.', 0)
+  }
+
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new ApiError(body?.error ?? `Request failed (${res.status})`, res.status)
+  }
+
+  return res.json() as Promise<T>
+}
+
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  body: JSON.stringify(body),
+})
+
+export const api = {
+  getContractor: () => request<Contractor>('/api/contractor'),
+
+  updateContractor: (patch: Partial<Contractor>) =>
+    request<Contractor>('/api/contractor', json('PATCH', patch)),
+
+  getPriceBook: () => request<PriceBookItem[]>('/api/pricebook'),
+
+  confirmPrice: (id: string, unitPriceCents: number) =>
+    request<PriceBookItem[]>(`/api/pricebook/${id}`, json('PATCH', { unitPriceCents })),
+
+  listQuotes: () => request<QuoteSummary[]>('/api/quotes'),
+
+  createQuote: (title: string) => request<QuoteWithItems>('/api/quotes', json('POST', { title })),
+
+  getQuote: (id: string) => request<QuoteWithItems>(`/api/quotes/${id}`),
+
+  updateQuote: (id: string, patch: Partial<Quote>) =>
+    request<QuoteWithItems>(`/api/quotes/${id}`, json('PATCH', patch)),
+
+  deleteQuote: (id: string) => request<{ ok: true }>(`/api/quotes/${id}`, { method: 'DELETE' }),
+
+  saveItems: (id: string, items: unknown[]) =>
+    request<QuoteWithItems>(`/api/quotes/${id}/items`, json('PUT', { items })),
+
+  getPublicQuote: (token: string) => request<PublicQuote>(`/api/public/${token}`),
+}

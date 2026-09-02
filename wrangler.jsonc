@@ -35,7 +35,7 @@
   "vars": {
     // 1 = stub the vision call with a canned scope response. No API key or network needed.
     "DEMO_MODE": "1",
-    // "free" | "paid" — selects which Gemini project key is expected. See src/server/ai.
+    // "free" | "paid": selects which Gemini project key is expected. See src/server/ai.
     "AI_TIER": "free",
     // Enables the ?tier= subscription override in dev. MUST be "0" in production.
     "ALLOW_TIER_OVERRIDE": "1"

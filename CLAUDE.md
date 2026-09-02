@@ -1,8 +1,8 @@
-# Painter Quote — project instructions
+# Painter Quote: project instructions
 
 Mobile-first PWA that turns job photos plus a text description into a professional
 painting quote in under a minute. Target user: residential painting contractors,
-1–10 employees.
+1-10 employees.
 
 The full plan lives at `C:\Users\relat\.claude\plans\do-i-need-an-replicated-flask.md`.
 
@@ -22,7 +22,7 @@ The full plan lives at `C:\Users\relat\.claude\plans\do-i-need-an-replicated-fla
 ## Architecture
 
 - **Platform:** Cloudflare Workers (free tier permits commercial use; no cold starts)
-- **Framework:** Hono — Express-shaped routing running *on* Workers. Not an alternative to
+- **Framework:** Hono: Express-shaped routing running *on* Workers. Not an alternative to
   Cloudflare; a layer on top of it.
 - **DB:** Cloudflare D1 (SQLite). All access behind `src/server/repo/` so it stays swappable.
 - **Photos:** R2, keys stored on the job row. Client resizes to ≤1024px before upload.
@@ -38,20 +38,22 @@ and the Atlas Data API that bridged that gap is retired.
 
 Two unrelated things are both called "tier":
 
-- **AI provider tier** — `AI_TIER` + `GEMINI_API_KEY`. Free and paid Gemini differ only by
+- **AI provider tier**: `AI_TIER` + `GEMINI_API_KEY`. Free and paid Gemini differ only by
   billing on the Google Cloud project; same key format, same endpoint, same code. Keep two
   keys, switch by env. No branching code paths.
-- **Product subscription tier** — Free / Pro / Business entitlements in
+- **Product subscription tier**: Free / Pro / Business entitlements in
   `src/server/entitlements/`. Dev-only `?tier=` override, gated by `ALLOW_TIER_OVERRIDE`,
   which must be `"0"` in production.
 
-`DEMO_MODE=1` stubs the vision call entirely — the whole UI builds and demos with no API
+`DEMO_MODE=1` stubs the vision call entirely: the whole UI builds and demos with no API
 key, no quota burn, and no network.
 
 ## Testing
 
-- `src/server/pricing/` is pure functions and must be exhaustively unit tested. Cover job
+- `src/shared/pricing.ts` is pure functions and must be exhaustively unit tested. Cover job
   minimum, multi-coat multipliers, and tax rounding. This is the part that must never be wrong.
+  It lives in `shared/` rather than `server/` because the editor computes live totals with
+  the same code: two implementations of money math would be two answers.
 - Fixtures in `src/server/fixtures/` are shared by tests and the seed command so they cannot drift.
 - No Apple hardware available. Use `npx playwright install webkit` for a real WebKit engine
   on Windows; Chrome DevTools emulation only catches layout, not engine bugs.
@@ -65,14 +67,14 @@ curl -sL -o .claude/skills/taste-skill/SKILL.md \
   https://raw.githubusercontent.com/Leonxlnx/taste-skill/main/skills/taste-skill/SKILL.md
 ```
 
-For **impeccable**, `npx impeccable install` is broken in 3.6.1 — its CLI requests
+For **impeccable**, `npx impeccable install` is broken in 3.6.1: its CLI requests
 `/api/download/bundle/claude-code`, but that endpoint only serves `bundle/universal`.
 Download `https://impeccable.style/api/download/bundle/universal`, unzip it, and copy the
 `.claude/skills/impeccable` and `.claude/agents` folders into place.
 
 Note on scope: **taste-skill declares itself wrong for this app's core UI** ("Not
 dashboards, not data tables, not multi-step product UI"). Use it for the marketing/landing
-page only. **impeccable** explicitly covers product UI, forms, and onboarding — that is the
+page only. **impeccable** explicitly covers product UI, forms, and onboarding: that is the
 one to use on the quote flow.
 
 `.claude/settings.json` (committed) installs impeccable's hooks: a design check after every
