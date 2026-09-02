@@ -5,6 +5,7 @@ import type {
   QuoteSummary,
   QuoteWithItems,
   QuotePhoto,
+  ScopeAnalysis,
   PublicQuote,
 } from '../../shared/types'
 
@@ -104,4 +105,7 @@ export const api = {
   },
 
   deletePhoto: (id: string) => request<{ ok: true }>(`/api/photos/${id}`, { method: 'DELETE' }),
+
+  analyzeQuote: (id: string) =>
+    request<ScopeAnalysis>(`/api/quotes/${id}/analyze`, { method: 'POST' }),
 }

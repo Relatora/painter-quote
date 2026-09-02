@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { PublicQuote, QuoteWithItems, Contractor } from '../shared/types'
 import { PHOTO_MAX_BYTES } from '../shared/types'
+import { getVisionProvider, VisionError } from './ai'
 import { calculateTotals, lineTotalCents } from '../shared/pricing'
 import {
   getOrCreateContractor,
@@ -29,6 +30,7 @@ export type Bindings = {
   AI_TIER: string
   ALLOW_TIER_OVERRIDE: string
   GEMINI_API_KEY?: string
+  GEMINI_MODEL?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -191,6 +193,60 @@ app.delete('/api/photos/:id', async (c) => {
   await deletePhoto(c.env.DB, row.id)
   await c.env.PHOTOS.delete(row.r2Key).catch(() => undefined)
   return c.json({ ok: true })
+})
+
+
+// ---------------------------------------------------------------------------
+// AI scope analysis
+// ---------------------------------------------------------------------------
+
+/** Cap on images sent to the model. Beyond this, cost climbs with little added signal. */
+const MAX_PHOTOS_ANALYSED = 6
+
+app.post('/api/quotes/:id/analyze', async (c) => {
+  const quoteId = c.req.param('id')
+  const quote = await getQuote(c.env.DB, quoteId)
+  if (!quote) return c.json({ error: 'Not found' }, 404)
+
+  if (quote.photos.length === 0 && !quote.title.trim() && !quote.notes?.trim()) {
+    return c.json({ error: 'Add a photo or describe the job first.' }, 400)
+  }
+
+  const photoRows = quote.photos.slice(0, MAX_PHOTOS_ANALYSED)
+  const fetched = await Promise.all(
+    photoRows.map(async (photo) => {
+      const row = await getPhotoRow(c.env.DB, photo.id)
+      if (!row) return null
+      const object = await c.env.PHOTOS.get(row.r2Key)
+      if (!object) return null
+      return { bytes: await object.arrayBuffer(), contentType: row.contentType }
+    }),
+  )
+
+  const priceBook = await listPriceBook(c.env.DB)
+
+  // The description the painter gave is the title plus any notes. Both are optional,
+  // and the prompt handles an empty description rather than failing.
+  const description = [quote.title, quote.notes].filter(Boolean).join('. ')
+
+  try {
+    const provider = getVisionProvider(c.env)
+    const analysis = await provider.analyzeJob({
+      description,
+      photos: fetched.filter((p): p is NonNullable<typeof p> => p !== null),
+      priceBookNames: priceBook.map((item) => item.name),
+    })
+    return c.json(analysis)
+  } catch (e) {
+    if (e instanceof VisionError) {
+      console.error('vision failure', e.status, e.detail)
+      // Upstream 4xx are our configuration or quota problem, not the caller's request,
+      // so they surface as 502 with a message the contractor can act on.
+      return c.json({ error: e.message }, 502)
+    }
+    console.error('vision failure', e)
+    return c.json({ error: 'The AI could not read this job.' }, 502)
+  }
 })
 
 // ---------------------------------------------------------------------------

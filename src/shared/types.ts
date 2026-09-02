@@ -166,3 +166,37 @@ export const DEFAULT_TERMS =
   'This is an estimate, subject to on-site verification. Final pricing may change if ' +
   'conditions differ from those described or shown in the photos provided. Valid for ' +
   '30 days from the date above.'
+
+/* ---------------------------------------------------------------------------
+   AI scope analysis
+   --------------------------------------------------------------------------- */
+
+export type Confidence = 'high' | 'medium' | 'low'
+
+/**
+ * One thing the model believes the job involves.
+ *
+ * Deliberately carries no quantity and no price. The model identifies WHAT the work is;
+ * the contractor supplies dimensions and the price book supplies the rate. A vision model
+ * cannot measure area from an uncalibrated phone photo, and area is what sets the price.
+ */
+export interface ScopeItem {
+  /** Plain language, in the painter's own vocabulary. */
+  label: string
+  /** Exact name of a price book item, chosen from the list supplied in the prompt. */
+  priceBookName: string | null
+  confidence: Confidence
+  /** What in the photo or description led here. Shown so the painter can judge it. */
+  reason: string
+}
+
+export interface ScopeAnalysis {
+  /** Surfaces to be coated. */
+  surfaces: ScopeItem[]
+  /** Prep and conditions: the line items painters most often forget to charge for. */
+  conditions: ScopeItem[]
+  /** What could not be determined from what was provided. Never invented certainty. */
+  uncertainties: string[]
+  /** True when the response came from the offline stub rather than a real model. */
+  demo: boolean
+}

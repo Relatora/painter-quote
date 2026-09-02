@@ -38,6 +38,8 @@
     // "free" | "paid": selects which Gemini project key is expected. See src/server/ai.
     "AI_TIER": "free",
     // Enables the ?tier= subscription override in dev. MUST be "0" in production.
-    "ALLOW_TIER_OVERRIDE": "1"
+    "ALLOW_TIER_OVERRIDE": "1",
+    // Free tier covers the Flash class. Set here so a model rename is config, not code.
+    "GEMINI_MODEL": "gemini-2.5-flash"
   }
 }

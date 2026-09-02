@@ -72,8 +72,11 @@ implementations of money math would eventually give two answers.
 
 ## Status
 
-The manual quote builder works end to end: build a quote, set prices, share a link, and the
-customer opens a real document. Authentication is deliberately absent so a painter can be
-handed a phone during validation with nothing in the way.
+Photo to quote works end to end: capture job photos, let the AI find the work, confirm what
+applies, set quantities and prices, share a link, and the customer opens a real document.
+
+Authentication is deliberately absent so a painter can be handed a phone during validation
+with nothing in the way. `DEMO_MODE=1` is the default, so the AI step returns a realistic
+sample rather than calling a model, and a demo never depends on a live API call.
 
 See the [open issues](https://github.com/Relatora/painter-quote/issues) for what is next.

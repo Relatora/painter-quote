@@ -5,6 +5,8 @@ import type {
   PriceBookItem,
   QuoteLineItem,
   QuotePhoto,
+  ScopeAnalysis,
+  ScopeItem,
   Category,
 } from '../../shared/types'
 import { CATEGORY_LABEL, CATEGORY_ORDER, UNIT_LABEL } from '../../shared/types'
@@ -21,6 +23,8 @@ import {
   TrashIcon,
   ShareIcon,
   CameraIcon,
+  CheckIcon,
+  AlertIcon,
   ErrorNote,
   LoadingBlock,
   Spinner,
@@ -52,6 +56,8 @@ export default function QuoteEditor() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [photos, setPhotos] = useState<QuotePhoto[]>([])
   const [uploading, setUploading] = useState(0)
+  const [analysis, setAnalysis] = useState<ScopeAnalysis | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -194,6 +200,62 @@ export default function QuoteEditor() {
     }
   }
 
+  async function analyze() {
+    setAnalyzing(true)
+    setError(null)
+    try {
+      setAnalysis(await api.analyzeQuote(id))
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'The AI could not read this job.')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  /**
+   * Turns accepted suggestions into line items.
+   *
+   * Quantity is always 1 and never inferred. The model is not permitted to estimate area,
+   * so every accepted item lands needing a quantity the contractor sets. The price comes
+   * from their price book and keeps its unconfirmed flag if it is still a seeded default.
+   */
+  /**
+   * Whether a suggestion would actually become a new line. Shared with the sheet so the
+   * button never promises to add items that dedupe will drop.
+   */
+  function willAdd(suggestion: ScopeItem): boolean {
+    const entry = priceBook.find((p) => p.name === suggestion.priceBookName)
+    if (!entry) return false
+    return !items.some((item) => item.priceBookItemId === entry.id)
+  }
+
+  function acceptSuggestions(accepted: ScopeItem[]) {
+    // Skip anything already on the quote. Re-running the analysis after adding work is
+    // normal, and silently doubling a line the painter already has is worse than
+    // omitting it: an inflated total reaches the customer without anyone noticing.
+    const present = new Set(items.map((item) => item.priceBookItemId).filter(Boolean))
+
+    const added = accepted
+      .map((suggestion) => {
+        const entry = priceBook.find((p) => p.name === suggestion.priceBookName)
+        if (!entry || present.has(entry.id)) return null
+        return {
+          priceBookItemId: entry.id,
+          name: entry.name,
+          description: suggestion.label,
+          category: entry.category,
+          unitType: entry.unitType,
+          quantity: 1,
+          unitPriceCents: entry.unitPriceCents,
+          isPriceUnconfirmed: entry.isDefault,
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+
+    if (added.length > 0) updateItems([...items, ...added])
+    setAnalysis(null)
+  }
+
   async function removePhoto(photoId: string) {
     setPhotos((current) => current.filter((p) => p.id !== photoId))
     await api.deletePhoto(photoId).catch(() => setError('Could not remove that photo.'))
@@ -300,6 +362,22 @@ export default function QuoteEditor() {
         onRemove={removePhoto}
       />
 
+      <div className="px-4 pb-5">
+        <Button
+          variant="secondary"
+          className="w-full"
+          onClick={analyze}
+          busy={analyzing}
+          disabled={photos.length === 0 && !quote.title.trim()}
+        >
+          {analyzing ? 'Reading the job' : 'Find the work'}
+        </Button>
+        <p className="mt-2 text-sm text-body">
+          Checks the photos for prep that is easy to miss. You confirm everything before it
+          reaches the quote.
+        </p>
+      </div>
+
       <section>
         <div className="flex items-baseline justify-between px-4 pt-2 pb-3">
           <h2 className="text-xl font-bold">Work</h2>
@@ -363,6 +441,13 @@ export default function QuoteEditor() {
           Preview and send
         </Button>
       </footer>
+
+      <ScopeSheet
+        analysis={analysis}
+        onClose={() => setAnalysis(null)}
+        onAccept={acceptSuggestions}
+        willAdd={willAdd}
+      />
 
       <PriceBookSheet
         open={sheetOpen}
@@ -459,6 +544,134 @@ function PhotoStrip({
         </button>
       </div>
     </section>
+  )
+}
+
+/* --------------------------------------------------------------------------- */
+
+const CONFIDENCE_NOTE: Record<ScopeItem['confidence'], string> = {
+  high: 'Clearly visible',
+  medium: 'Probable, worth checking',
+  low: 'Possible, worth checking',
+}
+
+function ScopeSheet({
+  analysis,
+  onClose,
+  onAccept,
+  willAdd,
+}: {
+  analysis: ScopeAnalysis | null
+  onClose: () => void
+  onAccept: (accepted: ScopeItem[]) => void
+  willAdd: (item: ScopeItem) => boolean
+}) {
+  const all = useMemo(
+    () => (analysis ? [...analysis.surfaces, ...analysis.conditions] : []),
+    [analysis],
+  )
+
+  // Only high confidence starts selected. Anything the model is unsure about must be a
+  // deliberate tap, so nothing uncertain reaches a customer's quote by default.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  useEffect(() => {
+    setSelected(new Set(all.map((item, i) => (item.confidence === 'high' ? i : -1)).filter((i) => i >= 0)))
+  }, [all])
+
+  if (!analysis) return null
+
+  const toggle = (index: number) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+
+  const usable = all.filter((item, i) => selected.has(i) && willAdd(item))
+  const surfaceCount = analysis.surfaces.length
+
+  return (
+    <Sheet open onClose={onClose} title="What we found">
+      {analysis.demo && (
+        <p className="border-b border-canvas-soft bg-canvas-softer px-4 py-2.5 text-sm text-body">
+          Demo mode. This is a sample result, not a reading of your photos.
+        </p>
+      )}
+
+      {all.length === 0 && (
+        <p className="px-4 py-6 text-base text-body">
+          Nothing could be identified from what was provided. Add a clearer photo or
+          describe the job, then try again.
+        </p>
+      )}
+
+      {all.map((item, index) => {
+        const checked = selected.has(index)
+        const mappable = willAdd(item)
+        const alreadyOnQuote = Boolean(item.priceBookName) && !mappable
+        return (
+          <button
+            key={index}
+            type="button"
+            onClick={() => mappable && toggle(index)}
+            disabled={!mappable}
+            className={`flex w-full items-start gap-3 border-b border-canvas-soft px-4 py-3.5
+              text-left ${mappable ? 'active:bg-canvas-soft' : 'opacity-60'}`}
+          >
+            <span
+              aria-hidden="true"
+              className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px]
+                border-2 ${checked ? 'border-ink bg-ink text-on-dark' : 'border-mute'}`}
+            >
+              {checked && <CheckIcon className="h-4 w-4" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-base font-medium">{item.label}</span>
+              <span className="mt-0.5 block text-sm text-body">{item.reason}</span>
+              <span className="mt-1 block text-sm text-body">
+                {index < surfaceCount ? 'Surface' : 'Prep'} ·{' '}
+                {CONFIDENCE_NOTE[item.confidence]}
+                {alreadyOnQuote && ' · already on this quote'}
+                {!mappable && !alreadyOnQuote && ' · no matching price book item'}
+              </span>
+            </span>
+          </button>
+        )
+      })}
+
+      {analysis.uncertainties.length > 0 && (
+        <div className="px-4 py-4">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-medium text-body">
+            <AlertIcon className="h-4 w-4" />
+            Could not be determined
+          </h3>
+          <ul className="space-y-2">
+            {analysis.uncertainties.map((note, i) => (
+              <li key={i} className="text-sm text-body">
+                {note}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="pb-safe sticky bottom-0 border-t border-canvas-soft bg-canvas px-4 py-3">
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={() => onAccept(all.filter((_, i) => selected.has(i)))}
+          disabled={usable.length === 0}
+        >
+          {usable.length === 0
+            ? 'Nothing new to add'
+            : `Add ${usable.length} ${usable.length === 1 ? 'item' : 'items'}`}
+        </Button>
+        <p className="mt-2 text-sm text-body">
+          You set the quantities. Nothing here is measured from a photo.
+        </p>
+      </div>
+    </Sheet>
   )
 }
 
