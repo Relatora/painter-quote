@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import type { PublicQuote, Category } from '../../shared/types'
 import { CATEGORY_LABEL, CATEGORY_ORDER, UNIT_LABEL } from '../../shared/types'
 import { formatCents } from '../../shared/pricing'
-import { api, ApiError } from '../lib/api'
+import { api, photoUrl, ApiError } from '../lib/api'
 import { Button, ErrorNote, LoadingBlock } from '../components/ui'
 
 const formatDate = (iso: string | null) =>
@@ -91,6 +91,23 @@ export default function PublicQuoteView() {
             </p>
           )}
         </div>
+
+        {quote.photoIds.length > 0 && (
+          <section className="mb-9">
+            <h3 className="mb-3 text-sm font-medium text-body">Job photos</h3>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {quote.photoIds.map((photoId) => (
+                <img
+                  key={photoId}
+                  src={photoUrl(photoId)}
+                  alt="Job photo"
+                  loading="lazy"
+                  className="aspect-4/3 w-full rounded-[var(--radius-lg)] bg-canvas-soft object-cover"
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         {grouped.map(({ category, entries }) => (
           <section key={category} className="mb-8">

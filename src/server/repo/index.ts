@@ -5,6 +5,7 @@ import type {
   QuoteLineItem,
   QuoteWithItems,
   QuoteSummary,
+  QuotePhoto,
   Category,
   UnitType,
   QuoteStatus,
@@ -105,6 +106,19 @@ function toLineItem(r: any): QuoteLineItem {
     unitPriceCents: r.unit_price_cents,
     isPriceUnconfirmed: r.is_price_unconfirmed === 1,
     sortOrder: r.sort_order,
+  }
+}
+
+function toPhoto(r: any): QuotePhoto {
+  return {
+    id: r.id,
+    quoteId: r.quote_id,
+    contentType: r.content_type,
+    width: r.width,
+    height: r.height,
+    byteSize: r.byte_size,
+    sortOrder: r.sort_order,
+    createdAt: r.created_at,
   }
 }
 
@@ -346,12 +360,22 @@ export async function getQuote(db: D1Database, id: string): Promise<QuoteWithIte
     .first()
   if (!row) return null
 
-  const { results } = await db
-    .prepare('SELECT * FROM quote_line_item WHERE quote_id = ? ORDER BY sort_order')
-    .bind(id)
-    .all()
+  const [items, photos] = await Promise.all([
+    db
+      .prepare('SELECT * FROM quote_line_item WHERE quote_id = ? ORDER BY sort_order')
+      .bind(id)
+      .all(),
+    db
+      .prepare('SELECT * FROM quote_photo WHERE quote_id = ? ORDER BY sort_order')
+      .bind(id)
+      .all(),
+  ])
 
-  return { ...toQuote(row), lineItems: results.map(toLineItem) }
+  return {
+    ...toQuote(row),
+    lineItems: items.results.map(toLineItem),
+    photos: photos.results.map(toPhoto),
+  }
 }
 
 /** Public lookup by token. Deliberately does NOT filter on contractor id. */
@@ -363,10 +387,16 @@ export async function getQuoteByToken(
   if (!row) return null
 
   const quote = toQuote(row)
-  const { results } = await db
-    .prepare('SELECT * FROM quote_line_item WHERE quote_id = ? ORDER BY sort_order')
-    .bind(quote.id)
-    .all()
+  const [items, photos] = await Promise.all([
+    db
+      .prepare('SELECT * FROM quote_line_item WHERE quote_id = ? ORDER BY sort_order')
+      .bind(quote.id)
+      .all(),
+    db
+      .prepare('SELECT * FROM quote_photo WHERE quote_id = ? ORDER BY sort_order')
+      .bind(quote.id)
+      .all(),
+  ])
 
   const contractorRow = await db
     .prepare('SELECT * FROM contractor WHERE id = ?')
@@ -375,7 +405,11 @@ export async function getQuoteByToken(
   if (!contractorRow) return null
 
   return {
-    quote: { ...quote, lineItems: results.map(toLineItem) },
+    quote: {
+      ...quote,
+      lineItems: items.results.map(toLineItem),
+      photos: photos.results.map(toPhoto),
+    },
     contractor: toContractor(contractorRow),
   }
 }
@@ -493,4 +527,67 @@ export async function replaceLineItems(
 
   await db.batch(statements)
   return getQuote(db, quoteId)
+}
+
+// ---------------------------------------------------------------------------
+// Photos. Bytes live in R2; only keys and metadata live here.
+// ---------------------------------------------------------------------------
+
+export interface PhotoInput {
+  r2Key: string
+  contentType: string
+  width: number | null
+  height: number | null
+  byteSize: number | null
+}
+
+export async function createPhoto(
+  db: D1Database,
+  quoteId: string,
+  input: PhotoInput,
+): Promise<QuotePhoto> {
+  const id = newId()
+  const created = nowIso()
+
+  const next = await db
+    .prepare('SELECT COALESCE(MAX(sort_order) + 1, 0) AS next FROM quote_photo WHERE quote_id = ?')
+    .bind(quoteId)
+    .first<{ next: number }>()
+
+  await db
+    .prepare(
+      `INSERT INTO quote_photo
+         (id, quote_id, r2_key, content_type, width, height, byte_size, sort_order, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      id,
+      quoteId,
+      input.r2Key,
+      input.contentType,
+      input.width,
+      input.height,
+      input.byteSize,
+      next?.next ?? 0,
+      created,
+    )
+    .run()
+
+  const row = await db.prepare('SELECT * FROM quote_photo WHERE id = ?').bind(id).first()
+  return toPhoto(row)
+}
+
+/** Returns the row including its R2 key, which the public shape deliberately omits. */
+export async function getPhotoRow(
+  db: D1Database,
+  id: string,
+): Promise<(QuotePhoto & { r2Key: string }) | null> {
+  const row = await db.prepare('SELECT * FROM quote_photo WHERE id = ?').bind(id).first()
+  if (!row) return null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { ...toPhoto(row), r2Key: (row as any).r2_key }
+}
+
+export async function deletePhoto(db: D1Database, id: string): Promise<void> {
+  await db.prepare('DELETE FROM quote_photo WHERE id = ?').bind(id).run()
 }

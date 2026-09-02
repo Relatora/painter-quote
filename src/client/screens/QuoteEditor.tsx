@@ -1,9 +1,16 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import type { QuoteWithItems, PriceBookItem, QuoteLineItem, Category } from '../../shared/types'
+import type {
+  QuoteWithItems,
+  PriceBookItem,
+  QuoteLineItem,
+  QuotePhoto,
+  Category,
+} from '../../shared/types'
 import { CATEGORY_LABEL, CATEGORY_ORDER, UNIT_LABEL } from '../../shared/types'
 import { calculateTotals, lineTotalCents, formatCents, parsePriceToCents } from '../../shared/pricing'
-import { api, ApiError } from '../lib/api'
+import { api, photoUrl, ApiError } from '../lib/api'
+import { prepareImage } from '../lib/image'
 import {
   Button,
   IconButton,
@@ -13,6 +20,7 @@ import {
   PlusIcon,
   TrashIcon,
   ShareIcon,
+  CameraIcon,
   ErrorNote,
   LoadingBlock,
   Spinner,
@@ -42,6 +50,8 @@ export default function QuoteEditor() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [photos, setPhotos] = useState<QuotePhoto[]>([])
+  const [uploading, setUploading] = useState(0)
 
   const load = useCallback(async () => {
     setError(null)
@@ -49,6 +59,7 @@ export default function QuoteEditor() {
       const [q, pb] = await Promise.all([api.getQuote(id), api.getPriceBook()])
       setQuote(q)
       setItems(q.lineItems.map(toDraft))
+      setPhotos(q.photos)
       setPriceBook(pb)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not open this quote.')
@@ -163,6 +174,31 @@ export default function QuoteEditor() {
     }
   }
 
+  async function addPhotos(files: FileList | null) {
+    if (!files || files.length === 0) return
+    const chosen = Array.from(files)
+    setUploading((n) => n + chosen.length)
+
+    // Sequential rather than parallel: a phone on a weak connection handles one upload
+    // far better than five, and the strip fills in visibly as each lands.
+    for (const file of chosen) {
+      try {
+        const prepared = await prepareImage(file)
+        const photo = await api.uploadPhoto(id, prepared.blob, prepared.width, prepared.height)
+        setPhotos((current) => [...current, photo])
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'Could not add that photo.')
+      } finally {
+        setUploading((n) => n - 1)
+      }
+    }
+  }
+
+  async function removePhoto(photoId: string) {
+    setPhotos((current) => current.filter((p) => p.id !== photoId))
+    await api.deletePhoto(photoId).catch(() => setError('Could not remove that photo.'))
+  }
+
   function removeItem(index: number) {
     updateItems(items.filter((_, i) => i !== index))
   }
@@ -257,6 +293,13 @@ export default function QuoteEditor() {
         />
       </section>
 
+      <PhotoStrip
+        photos={photos}
+        uploading={uploading}
+        onAdd={addPhotos}
+        onRemove={removePhoto}
+      />
+
       <section>
         <div className="flex items-baseline justify-between px-4 pt-2 pb-3">
           <h2 className="text-xl font-bold">Work</h2>
@@ -328,6 +371,94 @@ export default function QuoteEditor() {
         onPick={addFromPriceBook}
       />
     </div>
+  )
+}
+
+/* --------------------------------------------------------------------------- */
+
+function PhotoStrip({
+  photos,
+  uploading,
+  onAdd,
+  onRemove,
+}: {
+  photos: QuotePhoto[]
+  uploading: number
+  onAdd: (files: FileList | null) => void
+  onRemove: (id: string) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <section className="border-t border-canvas-soft py-5">
+      <div className="flex items-baseline justify-between px-4 pb-3">
+        <h2 className="text-xl font-bold">Photos</h2>
+        {photos.length > 0 && (
+          <span className="text-sm text-body">
+            {photos.length} {photos.length === 1 ? 'photo' : 'photos'}
+          </span>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        /* Opens the rear camera directly on a phone instead of the file browser.
+           Desktop browsers ignore it and show a normal picker, which is what we want. */
+        capture="environment"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          onAdd(e.target.files)
+          // Reset so choosing the same file twice still fires a change event.
+          e.target.value = ''
+        }}
+      />
+
+      <div className="flex gap-3 overflow-x-auto px-4 pb-1">
+        {photos.map((photo) => (
+          <div key={photo.id} className="relative shrink-0">
+            <img
+              src={photoUrl(photo.id)}
+              alt="Job photo"
+              loading="lazy"
+              className="h-28 w-28 rounded-[var(--radius-lg)] bg-canvas-soft object-cover"
+            />
+            <button
+              type="button"
+              aria-label="Remove photo"
+              onClick={() => onRemove(photo.id)}
+              className="absolute -top-2 -right-2 flex h-8 w-8 items-center justify-center
+                rounded-[var(--radius-pill)] border-2 border-canvas bg-ink text-on-dark"
+            >
+              <TrashIcon className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+
+        {Array.from({ length: uploading }, (_, i) => (
+          <div
+            key={`pending-${i}`}
+            className="flex h-28 w-28 shrink-0 items-center justify-center
+              rounded-[var(--radius-lg)] bg-canvas-soft"
+          >
+            <Spinner className="h-5 w-5 text-body" />
+          </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="flex h-28 w-28 shrink-0 flex-col items-center justify-center gap-1.5
+            rounded-[var(--radius-lg)] border-2 border-dashed border-mute text-body
+            active:bg-canvas-soft"
+        >
+          <CameraIcon className="h-7 w-7" />
+          <span className="text-sm font-medium">Add</span>
+        </button>
+      </div>
+    </section>
   )
 }
 

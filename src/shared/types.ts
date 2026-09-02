@@ -91,9 +91,27 @@ export interface Quote {
   expiresAt: string | null
 }
 
+export interface QuotePhoto {
+  id: string
+  quoteId: string
+  contentType: string
+  width: number | null
+  height: number | null
+  byteSize: number | null
+  sortOrder: number
+  createdAt: string
+}
+
 export interface QuoteWithItems extends Quote {
   lineItems: QuoteLineItem[]
+  photos: QuotePhoto[]
 }
+
+/** Longest edge, in pixels, that a photo is resized to before upload. */
+export const PHOTO_MAX_EDGE = 1024
+
+/** Upload ceiling after resize. A 1024px JPEG lands far below this in practice. */
+export const PHOTO_MAX_BYTES = 4 * 1024 * 1024
 
 /** A quote as it appears in the list screen: no line items, but a computed total. */
 export interface QuoteSummary extends Quote {
@@ -112,6 +130,7 @@ export interface PublicQuote {
   terms: string | null
   createdAt: string
   expiresAt: string | null
+  photoIds: string[]
   company: {
     name: string
     ownerName: string | null

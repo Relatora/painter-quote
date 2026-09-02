@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { PublicQuote, QuoteWithItems, Contractor } from '../shared/types'
+import { PHOTO_MAX_BYTES } from '../shared/types'
 import { calculateTotals, lineTotalCents } from '../shared/pricing'
 import {
   getOrCreateContractor,
@@ -13,6 +14,9 @@ import {
   deleteQuote,
   replaceLineItems,
   getQuoteByToken,
+  createPhoto,
+  getPhotoRow,
+  deletePhoto,
   type ContractorPatch,
   type QuotePatch,
   type LineItemInput,
@@ -112,6 +116,83 @@ app.put('/api/quotes/:id/items', async (c) => {
   return quote ? c.json(quote) : c.json({ error: 'Not found' }, 404)
 })
 
+
+// ---------------------------------------------------------------------------
+// Photos
+// ---------------------------------------------------------------------------
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+/**
+ * Raw bytes in the request body rather than multipart. The client has already decoded,
+ * re-oriented, resized, and re-encoded the image to JPEG, so there is nothing left for a
+ * multipart envelope to carry and parsing one on the Worker would only cost CPU.
+ */
+app.post('/api/quotes/:id/photos', async (c) => {
+  const quoteId = c.req.param('id')
+  const quote = await getQuote(c.env.DB, quoteId)
+  if (!quote) return c.json({ error: 'Not found' }, 404)
+
+  const contentType = c.req.header('content-type') ?? ''
+  if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
+    return c.json({ error: 'Unsupported image type' }, 415)
+  }
+
+  const bytes = await c.req.arrayBuffer()
+  if (bytes.byteLength === 0) return c.json({ error: 'Empty upload' }, 400)
+  if (bytes.byteLength > PHOTO_MAX_BYTES) return c.json({ error: 'Image too large' }, 413)
+
+  const width = Number.parseInt(c.req.query('w') ?? '', 10)
+  const height = Number.parseInt(c.req.query('h') ?? '', 10)
+
+  const extension = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg'
+  const r2Key = `quotes/${quoteId}/${crypto.randomUUID()}.${extension}`
+
+  await c.env.PHOTOS.put(r2Key, bytes, { httpMetadata: { contentType } })
+
+  const photo = await createPhoto(c.env.DB, quoteId, {
+    r2Key,
+    contentType,
+    width: Number.isFinite(width) ? width : null,
+    height: Number.isFinite(height) ? height : null,
+    byteSize: bytes.byteLength,
+  })
+
+  return c.json(photo, 201)
+})
+
+/**
+ * Streams the object out of R2. Unauthenticated, like the public quote itself: the
+ * random photo id is the credential, and a customer opening a quote link has to be able
+ * to load the images without an account.
+ */
+app.get('/api/photos/:id', async (c) => {
+  const row = await getPhotoRow(c.env.DB, c.req.param('id'))
+  if (!row) return c.json({ error: 'Not found' }, 404)
+
+  const object = await c.env.PHOTOS.get(row.r2Key)
+  if (!object) return c.json({ error: 'Not found' }, 404)
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': row.contentType,
+      // Content at this key never changes: a new upload gets a new key and a new id.
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'ETag': object.httpEtag,
+    },
+  })
+})
+
+app.delete('/api/photos/:id', async (c) => {
+  const row = await getPhotoRow(c.env.DB, c.req.param('id'))
+  if (!row) return c.json({ error: 'Not found' }, 404)
+  // Remove the row first. An orphaned R2 object costs pennies; a row pointing at a
+  // deleted object renders a broken image on a customer's quote.
+  await deletePhoto(c.env.DB, row.id)
+  await c.env.PHOTOS.delete(row.r2Key).catch(() => undefined)
+  return c.json({ ok: true })
+})
+
 // ---------------------------------------------------------------------------
 // Public customer-facing quote. No auth: the token is the credential.
 // ---------------------------------------------------------------------------
@@ -134,6 +215,7 @@ function toPublicQuote(quote: QuoteWithItems, contractor: Contractor): PublicQuo
       phone: contractor.phone,
       address: contractor.address,
     },
+    photoIds: quote.photos.map((p) => p.id),
     lineItems: quote.lineItems.map((item) => ({
       name: item.name,
       description: item.description,

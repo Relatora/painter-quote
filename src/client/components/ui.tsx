@@ -53,6 +53,12 @@ export const AlertIcon = icon(
     <path d="M12 8v5M12 16.5v.01" />
   </>,
 )
+export const CameraIcon = icon(
+  <>
+    <path d="M3 8a2 2 0 012-2h2.2a2 2 0 001.7-.9l.6-1a2 2 0 011.7-.9h1.6a2 2 0 011.7.9l.6 1a2 2 0 001.7.9H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+    <circle cx="12" cy="12.5" r="3.5" />
+  </>,
+)
 export const BrushIcon = icon(
   <>
     <path d="M4 20s1-3 4-3 3 2 5 2 4-2 4-2" />

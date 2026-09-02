@@ -4,6 +4,7 @@ import type {
   Quote,
   QuoteSummary,
   QuoteWithItems,
+  QuotePhoto,
   PublicQuote,
 } from '../../shared/types'
 
@@ -44,6 +45,9 @@ const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 })
 
+/** Photos are served straight from the Worker, so this is just a path. */
+export const photoUrl = (id: string) => `/api/photos/${id}`
+
 export const api = {
   getContractor: () => request<Contractor>('/api/contractor'),
 
@@ -70,4 +74,34 @@ export const api = {
     request<QuoteWithItems>(`/api/quotes/${id}/items`, json('PUT', { items })),
 
   getPublicQuote: (token: string) => request<PublicQuote>(`/api/public/${token}`),
+
+  /**
+   * Posts the prepared image bytes directly. Deliberately bypasses `request`, whose
+   * JSON content-type header would misdescribe the body: the server reads the
+   * content-type to decide the R2 object type and reject anything that is not an image.
+   */
+  uploadPhoto: async (
+    quoteId: string,
+    blob: Blob,
+    width: number,
+    height: number,
+  ): Promise<QuotePhoto> => {
+    let res: Response
+    try {
+      res = await fetch(`/api/quotes/${quoteId}/photos?w=${width}&h=${height}`, {
+        method: 'POST',
+        headers: { 'Content-Type': blob.type || 'image/jpeg' },
+        body: blob,
+      })
+    } catch {
+      throw new ApiError('No connection. The photo was not uploaded.', 0)
+    }
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null
+      throw new ApiError(body?.error ?? 'Could not upload that photo.', res.status)
+    }
+    return res.json() as Promise<QuotePhoto>
+  },
+
+  deletePhoto: (id: string) => request<{ ok: true }>(`/api/photos/${id}`, { method: 'DELETE' }),
 }
