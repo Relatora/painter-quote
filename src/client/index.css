@@ -19,7 +19,7 @@
   --color-link: #0000ee;
 
   /* Extension: the base system has no semantic palette. Reserved strictly for
-     destructive actions and genuine errors — never for the unconfirmed-price state,
+     destructive actions and genuine errors: never for the unconfirmed-price state,
      which is an invitation to act, not a failure. 6.4:1 on canvas. */
   --color-alert: #c8102e;
 
