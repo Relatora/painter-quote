@@ -36,6 +36,15 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    // Vite does not read PORT on its own, unlike `next dev`. Without this, a harness
+    // that assigns a port through the environment would be told one number while Vite
+    // quietly bound its default 5173, and the preview would point at nothing.
+    port: Number(process.env.PORT) || 5173,
+    // When a port was assigned, bind exactly it or fail. Drifting to the next free port
+    // is worse than a clear error, because the caller is left polling the wrong one.
+    strictPort: Boolean(process.env.PORT),
+  },
   // No build.outDir override here. The Cloudflare plugin owns the output layout and
   // emits client assets to dist/client and the worker to dist/<worker-name>, which is
   // exactly what wrangler.jsonc's assets.directory points at. Setting outDir ourselves
