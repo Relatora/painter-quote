@@ -6,6 +6,127 @@ AI assisted estimating for residential painting contractors running 1 to 10 pers
 businesses. It owns exactly one workflow, job info to scope to price to quote, and does not
 try to be a contractor management platform.
 
+![Four phone screens showing the flow: job photos, the AI's prep checklist, priced line items with a live total, and the finished customer quote](docs/screenshots/banner.png)
+
+## How it works
+
+The painter is standing in the customer's house with a phone. Everything below is that one
+flow, start to finish.
+
+### 1. Snap the job
+
+<table>
+<tr>
+<td valign="top">
+<img src="docs/screenshots/job-photos.png" alt="Quote editor with three job photos, a room measurement summary, and the Find the work button" width="320">
+</td>
+<td valign="top">
+
+Add a few photos from the rear camera and pick the room size. Photos are resized on the
+phone to 1024px before upload, because the painter is usually on a truck's cell connection.
+
+Room size is two taps from a preset list, or length by width by height. **The AI never
+measures from a photo.** An uncalibrated phone camera can't give reliable square footage,
+and area is the number that sets the price.
+
+Then tap **Find the work**.
+
+</td>
+</tr>
+</table>
+
+### 2. The AI catches the prep you would forget to charge for
+
+<table>
+<tr>
+<td valign="top">
+<img src="docs/screenshots/scope-surfaces.png" alt="What we found sheet listing surfaces to paint, each with a reason and a confidence note" width="320">
+</td>
+<td valign="top">
+<img src="docs/screenshots/scope-prep.png" alt="What we found sheet listing prep work such as re-caulking the tub and spot priming a water stain, plus things that could not be determined" width="320">
+</td>
+</tr>
+</table>
+
+This is the product. Painters lose money on prep they don't bill for: the split caulk line
+at the tub, the water stain that will bleed through new paint, the nail holes by the towel
+bar. The vision model returns surfaces, conditions and prep, each with the reason it was
+flagged.
+
+Only high-confidence findings start checked. Anything the model is unsure about, like
+spot-priming the stain above, takes a deliberate tap, so nothing uncertain reaches a
+customer's quote by default. It also says what it **could not** determine, such as whether
+that stain is an active leak.
+
+### 3. Measurements fill in the quantities
+
+<table>
+<tr>
+<td valign="top">
+<img src="docs/screenshots/measurements.png" alt="Measurements sheet with a bathroom preset at two coats, common room presets, and a custom room form" width="320">
+</td>
+<td valign="top">
+
+Rooms fan out across the quote: wall area drives wall painting, priming and wallpaper
+removal, trim length drives trim and caulking, and coats multiply in. Doors, windows and
+flat fees keep the counts the painter set.
+
+This overwrites quantities, so it's an explicit button rather than something that happens
+silently whenever a room changes.
+
+</td>
+</tr>
+</table>
+
+### 4. Confirm the prices. The price book fills itself in
+
+<table>
+<tr>
+<td valign="top">
+<img src="docs/screenshots/work.png" alt="Line items grouped into prep and labor, with dashed borders on suggested prices and a live total at the bottom" width="320">
+</td>
+<td valign="top">
+<img src="docs/screenshots/price-book.png" alt="Add work sheet listing price book items with their unit rates" width="320">
+</td>
+</tr>
+</table>
+
+A new account starts with a seeded price book, so a painter can send a complete quote on
+day one without typing in forty line items first. **The AI never sets a price.** A seeded
+rate shows with a dashed border and *"Our suggestion: tap to set your price."* Editing it
+confirms the line and saves the number to that painter's price book, so they never get
+asked again.
+
+The total updates live as you type. It's computed by the same `shared/pricing.ts` module
+the server uses, so the editor and the sent quote can't disagree. Edits autosave, so there's
+no Save button to forget mid-conversation.
+
+### 5. Send a link. The customer opens a real document
+
+<img src="docs/screenshots/customer-desktop.png" alt="Customer-facing quote on a desktop browser with company details, job photos, itemized prep and labor, subtotal, tax, total, and estimate terms" width="100%">
+
+<table>
+<tr>
+<td valign="top">
+<img src="docs/screenshots/customer-phone.png" alt="The same customer quote on a phone" width="320">
+</td>
+<td valign="top">
+<img src="docs/screenshots/quotes.png" alt="Quote list showing five jobs with customer, quote number, status and total" width="320">
+</td>
+</tr>
+</table>
+
+**Preview and send** opens the phone's share sheet with a short `/q/…` link to paste into a
+text message. The customer gets a quote that reads like something a real business sent:
+itemized, with tabular figures so the price column lines up, and the *"estimate, subject to
+on-site verification"* terms every quote carries. It needs no sign-in, and it saves to PDF.
+
+The home screen lists every quote with its status and total.
+
+> These screenshots come from a local run in `DEMO_MODE=1`, which is why the AI sheet says
+> it's showing a sample result. The job photos are illustrated stand-ins, and the business
+> and customers are made up.
+
 ## What it actually sells
 
 Not "an app that formats your quote nicely." Painters lose money by **under scoping prep**:
