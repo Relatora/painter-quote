@@ -10,10 +10,9 @@ try to be a contractor management platform.
 
 ## Demo
 
-[![A 76-second walkthrough: a painter starts a quote, adds job photos, reviews the prep the AI found, sets the room size and prices, and shares a link that opens the customer's itemized quote](docs/demo/painter-quote-demo.gif)](docs/demo/painter-quote-demo.mp4)
+![A 76-second walkthrough: a painter starts a quote, adds job photos, reviews the prep the AI found, sets the room size and prices, and shares a link that opens the customer's itemized quote](docs/demo/painter-quote-demo.gif)
 
-A 76-second walkthrough, from job photos to the quote the customer opens.
-[Watch the full-quality MP4](docs/demo/painter-quote-demo.mp4). Recorded locally in
+A 76-second walkthrough, from job photos to the quote the customer opens. Recorded locally in
 `DEMO_MODE=1`, so the AI step returns a sample result. The photos are illustrated stand-ins
 and the business and customers are made up.
 
