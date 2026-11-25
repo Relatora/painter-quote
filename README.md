@@ -212,3 +212,9 @@ handed a phone during validation with nothing in the way.
 than calling a model, so a demo never depends on a live API call.
 
 See the [open issues](https://github.com/Relatora/painter-quote/issues) for what is next.
+
+## License
+
+Copyright (c) 2026 Amr Abdallah. All rights reserved.
+
+The source is public to read, not to use. You may view it to evaluate my work, but you may not run, copy, modify, redistribute or train AI models on it. See [LICENSE](LICENSE) for the full terms.
